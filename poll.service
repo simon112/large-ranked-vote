@@ -1,0 +1,56 @@
+# System unit: runs the poll server as an unprivileged, sandboxed user.
+# Installed to /etc/systemd/system/poll.service by deploy.sh.
+[Unit]
+Description=Ranked poll server (Borda), sandboxed
+After=network.target
+
+[Service]
+User=poll
+Group=poll
+ExecStart=/usr/bin/python3 -I /opt/poll/server.py
+Environment=POLL_PORT=8787 POLL_HOST=127.0.0.1 POLL_DB=/var/lib/poll/polls.db
+StateDirectory=poll
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+
+# Filesystem: whole OS read-only, /home /root /run/user invisible, private /tmp and /dev.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+# Network: may only listen/talk on localhost (Tailscale Funnel connects to 127.0.0.1:8787).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+# Privileges and kernel surface.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RemoveIPC=yes
+PrivateIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Resource caps so a flood can't take the box down with it.
+MemoryMax=256M
+TasksMax=64
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

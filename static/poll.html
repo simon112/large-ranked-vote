@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<meta property="og:title" content="{{TITLE}}">
+<meta property="og:description" content="{{DESCRIPTION}}">
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#e2e2dd; --accent:#3a6df0; --bar:#3a6df033;
+    --t0:#1f9d55; --t1:#5aa83c; --t2:#8a8a84; --t3:#d08a1e; --t4:#d0453a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151515; --card:#1f1f1f; --ink:#ececea; --muted:#9a9a94; --line:#333; --accent:#7aa0ff; --bar:#7aa0ff33;
+    --t0:#3fc97a; --t1:#86c95e; --t2:#9a9a94; --t3:#e6a443; --t4:#ef6b60; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 system-ui, sans-serif; }
+  main { max-width:600px; margin:0 auto; padding:24px 16px 96px; }
+  h1 { font-size:1.4rem; margin:0 0 4px; }
+  h2 { font-size:1.05rem; margin:28px 0 6px; }
+  .muted { color:var(--muted); font-size:.9rem; }
+  a { color:var(--accent); }
+
+  /* Option rows (shared by the to-sort pile and the ranking). */
+  ul.items, ol.items { list-style:none; margin:0; padding:0; min-height:8px; }
+  .items li { background:var(--card); border:1px solid var(--line); border-radius:8px; margin-bottom:3px; }
+  .items li .main { display:flex; align-items:center; gap:8px; padding:3px 4px 3px 10px; }
+  .items li .pos { min-width:2em; color:var(--muted); font-variant-numeric:tabular-nums; font-size:.9rem; }
+  .items li .txt { flex:1; cursor:pointer; user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
+  .items li .handle { color:var(--muted); font-size:1.3rem; padding:4px 8px; cursor:grab; touch-action:none; user-select:none; }
+  .items li .acts { display:flex; flex-wrap:wrap; gap:4px; padding:0 8px 8px; }
+  .acts button { font:inherit; font-size:.85rem; background:none; color:var(--ink); border:1px solid var(--line); border-radius:999px; padding:4px 10px; cursor:pointer; }
+  .acts button.tierbtn { border-color:var(--tc); }
+  .acts button.tierbtn.cur { background:var(--tc); color:#fff; }
+  .acts .mvgrp { display:flex; gap:4px; margin-left:auto; }
+  #unsorted li .pos, #unsorted .mvgrp { display:none; }
+  .rank li:not(.open) .acts { display:none; }
+  .rank li.open { border-color:var(--accent); }
+  .ghost { opacity:.35; }
+  .acts button.splbtn { display:none; padding:6px 12px; -webkit-tap-highlight-color:transparent; }
+  .acts button.splbtn.cur { background:var(--tc); border-color:var(--tc); color:#fff; }
+  /* Split mode: every row of the group shows High / Mid / Low inline and stays put while you mark. */
+  .group.splitting li { display:flex; align-items:center; }
+  .group.splitting li .main { flex:1; min-width:0; }
+  .group.splitting li .acts { display:flex; flex-wrap:nowrap; padding:0 6px 0 0; }
+  .group.splitting li .tierbtn, .group.splitting li .mvgrp, .group.splitting li .handle { display:none; }
+  .group.splitting li .splbtn { display:inline-block; }
+  .group.splitting li[data-mark="0"] { border-color:var(--tc); }
+  .group.splitting li[data-mark="2"] { opacity:.75; }
+  .splhint { font-weight:normal; font-size:.85rem; color:var(--muted); padding:0 0 6px; }
+  .splhint[hidden] { display:none; }
+
+  /* Tiers: one flat ranking, divided into labelled blocks. */
+  .group { border-left:4px solid var(--tc); padding-left:8px; margin-bottom:10px; }
+  .group.sub { border-left-width:2px; padding-left:8px; margin:2px 0 6px; }
+  .tierhead { font-weight:600; font-size:.9rem; color:var(--tc); padding:4px 0; }
+  .group.sub > .tierhead { font-size:.8rem; padding:2px 0; }
+  .hbtns { margin-left:auto; display:flex; gap:14px; }
+  .hbtns .linkbtn { font-weight:normal; }
+  body.sorting .hbtns { display:none; }
+  .group ol.items { min-height:36px; }
+  .group ol.items:empty::after { content:"Nothing here yet"; display:block; color:var(--muted); font-size:.85rem; padding:8px 0; }
+
+  /* Sorting card: pinned to the top while options remain, one option at a time. */
+  #sortBox { position:sticky; top:0; z-index:5; background:var(--card); border:1px solid var(--line); border-radius:0 0 12px 12px;
+    padding:10px 12px; margin:12px -4px 0; box-shadow:0 4px 12px #0002; }
+  #sortBox.done { position:static; box-shadow:none; border-radius:12px; }
+  .sorthead { display:flex; align-items:center; gap:12px; font-size:.85rem; color:var(--muted); }
+  .sorthead .grow { flex:1; }
+  .linkbtn { font:inherit; font-size:.85rem; background:none; border:0; color:var(--accent); padding:2px 0; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .linkbtn[hidden] { display:none; }
+  #current { font-size:1.25rem; font-weight:600; margin:6px 0 10px; min-height:1.5em; }
+  #sortBox.done #current { font-size:1rem; font-weight:normal; }
+  .tierbtns { display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; }
+  .tierbtns button { font:inherit; font-size:.9rem; font-weight:600; background:none; color:var(--tc); border:2px solid var(--tc); border-radius:10px;
+    padding:8px 2px 6px; cursor:pointer; line-height:1.15; -webkit-tap-highlight-color:transparent; }
+  .tierbtns button:active { background:var(--tc); color:#fff; }
+  .tierbtns button .c { display:block; font-size:.75rem; font-weight:normal; color:var(--muted); }
+  #sortBox.done .tierbtns { display:none; }
+  #last { font-size:.88rem; margin-top:8px; min-height:1.3em; }
+  #unsorted { display:none; }
+  @keyframes flash { 0%, 30% { background:var(--bar); border-color:var(--accent); } 100% { } }
+  .items li.flash { animation:flash 1.6s ease-out; }
+  body.sorting .savebar { display:none; }
+
+  /* "This or that?" comparison overlay for ordering one tier. */
+  .tierhead { display:flex; align-items:center; gap:6px; }
+  .overlay { user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; position:fixed; inset:0; z-index:20; background:#0007; display:flex; align-items:center; justify-content:center; padding:16px; }
+  .overlay[hidden] { display:none; }
+  .cmpcard { background:var(--card); border-radius:14px; padding:14px 16px 16px; width:100%; max-width:440px; border-top:6px solid var(--tc); }
+  .cmpcard .q { font-weight:600; margin:10px 0; text-align:center; }
+  .choice { display:block; width:100%; font:inherit; font-size:1.15rem; font-weight:600; color:var(--ink); background:var(--bg);
+    border:2px solid var(--line); border-radius:12px; padding:22px 12px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .choice:active, .choice:focus-visible { border-color:var(--tc); }
+  .cmpcard .or { text-align:center; color:var(--muted); font-size:.85rem; margin:6px 0; }
+  .cmpfoot { display:flex; align-items:center; margin-top:12px; font-size:.85rem; }
+  .cmpfoot .grow { flex:1; }
+  body.modal { overflow:hidden; }
+
+  .savebar { position:sticky; bottom:0; background:var(--bg); padding:10px 0; border-top:1px solid var(--line); margin-top:12px; }
+  .row { display:flex; gap:8px; }
+  input { flex:1; min-width:0; font:inherit; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  button.primary { font:inherit; font-weight:600; background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 18px; cursor:pointer; }
+  button.primary:disabled { opacity:.5; cursor:default; }
+  .msg { margin-top:6px; min-height:1.3em; }
+
+  table { width:100%; border-collapse:collapse; }
+  td { padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  td.n { text-align:right; font-variant-numeric:tabular-nums; width:4em; }
+  .bar { height:6px; background:var(--bar); border-radius:3px; margin-top:4px; }
+  .bar > span { display:block; height:100%; background:var(--accent); border-radius:3px; }
+  details { margin-top:8px; }
+  summary { cursor:pointer; }
+  .ballot { margin:10px 0; font-size:.92rem; }
+  .ballot .tl { color:var(--tc); font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{TITLE}}</h1>
+  <div class="muted">Put each option in a tier. Then refine if you like: “⊟ Split” a big tier by marking which of its options are High or Low within it, “⇅ Compare” orders a small one with this-or-that questions, or drag by ⠿, or tap an option for move buttons. Your ranking is the whole list below, top to bottom.</div>
+
+  <section id="sortBox">
+    <div class="sorthead"><span id="leftCount"></span><span class="grow"></span>
+      <button type="button" class="linkbtn" id="skip">Skip for now</button><button type="button" class="linkbtn" id="undo" hidden>Undo</button></div>
+    <div id="current"></div>
+    <div class="tierbtns" id="cardBtns"></div>
+    <div id="last" class="muted"></div>
+    <ul class="items" id="unsorted"></ul>
+    <div class="muted" id="loadPrev" hidden>Voted already, maybe on another device? <button type="button" class="linkbtn" id="loadBtn">Load your vote</button></div>
+  </section>
+
+  <h2>Your ranking</h2>
+  <div id="tiers"></div>
+
+  <div class="savebar">
+    <div class="row">
+      <input id="name" placeholder="Your name" maxlength="60" autocomplete="nickname">
+      <button class="primary" id="save">Save</button>
+    </div>
+    <div class="msg muted" id="msg"></div>
+    <div class="muted" id="mineBtns" hidden><button type="button" class="linkbtn" id="edit">Edit saved vote</button> · <button type="button" class="linkbtn" id="rename">Change name</button> · <button type="button" class="linkbtn" id="del">Delete this vote</button></div>
+  </div>
+
+  <div class="overlay" id="cmp" hidden>
+    <div class="cmpcard" role="dialog" aria-modal="true" aria-labelledby="cmpTitle">
+      <div class="sorthead"><b id="cmpTitle"></b><span class="grow"></span><button type="button" class="linkbtn" id="cmpCancel">Cancel</button></div>
+      <div class="q">Which do you prefer?</div>
+      <button type="button" class="choice" id="cmpA"></button>
+      <div class="or">or</div>
+      <button type="button" class="choice" id="cmpB"></button>
+      <div class="cmpfoot"><span class="muted" id="cmpRem"></span><span class="grow"></span>
+        <button type="button" class="linkbtn" id="cmpUndo">Undo</button>&nbsp;&nbsp;<button type="button" class="linkbtn" id="cmpEither">Can't decide</button></div>
+    </div>
+  </div>
+
+  <h2>Results <span class="muted" id="count"></span></h2>
+  <table id="results"></table>
+  <details><summary class="muted">Individual rankings</summary><div id="ballots"></div></details>
+  <p class="muted" style="margin-top:28px">Scored by Borda count on the whole list: with <i>n</i> options, your 1st gets <i>n</i>−1 points and your last gets 0. Tiers and splits just help you build the list. <a href="/">Make a new poll</a></p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+const TIERS = ['Love it', 'Like it', 'Fine', 'Meh', 'No'];  // count must match NUM_TIERS in server.py
+const SUB = ['High', 'Mid', 'Low'];                         // sub-group names; count must match NUM_SUB
+const MAX_DEPTH = 3;                                         // tier + two levels of split; must match MAX_DEPTH
+const pid = location.pathname.split('/').pop();
+const $ = id => document.getElementById(id);
+const unsortedEl = $('unsorted'), tiersEl = $('tiers'), nameEl = $('name'), msgEl = $('msg');
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let poll, tierGroups = [];
+// Unsaved work is kept as a draft in this browser so a refresh puts back exactly what was on screen,
+// including the typed name. basis is the 'updated' time of that name's saved ballot as last seen (null if
+// none); if that ballot has been saved again since (e.g. from another device), the saved one wins.
+const draftKey = 'poll:draft:' + pid;
+let basis = null, ready = false;
+function readDraft() {
+  try {
+    const d = JSON.parse(store.get(draftKey)), n = poll.options.length, all = [...d.unsorted, ...d.ranking];
+    if (typeof d.name !== 'string' || new Set(all).size !== all.length || all.some(i => !(Number.isInteger(i) && i >= 0 && i < n)) || d.tiers.length !== d.ranking.length) return null;
+    const have = new Set(all);
+    d.unsorted.push(...poll.options.map((_, i) => i).filter(i => !have.has(i)));  // anything missing goes back on the card
+    return d;
+  } catch { return null; }
+}
+function writeDraft() {
+  if (!ready) return;
+  const items = rankedItems();
+  store.set(draftKey, JSON.stringify({ name: nameEl.value, basis, unsorted: [...unsortedEl.children].map(li => +li.dataset.i),
+    ranking: items.map(li => +li.dataset.i), tiers: items.map(pathOf) }));
+}
+
+// ---- Groups. The ranking is one flat list; groups are labelled contiguous blocks of it.
+// A group is a leaf (holds an <ol> of options) or split (holds .kids: three sub-groups High/Mid/Low).
+function groupHTML(label, k, color, sub) {
+  return `<div class="group${sub ? ' sub' : ''}" data-k="${k}" style="--tc:var(--t${color})"><div class="tierhead"><span>${esc(label)}</span> <span class="cnt muted"></span>
+    <span class="hbtns"><button type="button" class="linkbtn" data-act="split">⊟ Split</button><button type="button" class="linkbtn" data-act="cmp"></button><button type="button" class="linkbtn" data-act="unsplit">Unsplit</button><button type="button" class="linkbtn" data-act="splcancel">Cancel</button><button type="button" class="linkbtn" data-act="spldone"><b>Done</b></button></span></div><div class="splhint" hidden></div><ol class="items rank"></ol></div>`;
+}
+const isLeaf = g => g.lastElementChild.tagName === 'OL';
+let splitting = null;  // the leaf group being marked High / Mid / Low, if any
+function pathOfGroup(g) {
+  const p = [];
+  for (let x = g; x; x = x.parentNode.closest('.group')) p.unshift(+x.dataset.k);
+  return p;
+}
+const pathOf = li => pathOfGroup(li.closest('.group'));
+const labelOf = g => pathOfGroup(g).map((k, d) => d ? SUB[k] : TIERS[k]).join(' › ');
+const leafLists = () => [...tiersEl.querySelectorAll('ol.rank')];
+const rankedItems = () => leafLists().flatMap(ol => [...ol.children]);
+function leafFor(g) { while (!isLeaf(g)) g = g.lastElementChild.children[1]; return g.lastElementChild; }  // "Mid" all the way down
+
+function enableSort(ol) {
+  if (window.Sortable && !ol._sortable) ol._sortable = Sortable.create(ol, { group:'rank', handle:'.handle', animation:150, ghostClass:'ghost',
+    forceFallback:true, fallbackTolerance:3, scroll:false, onStart: edgeScroll.start,
+    onEnd: e => { edgeScroll.stop(); refresh(); if (e.from !== e.to || e.oldIndex !== e.newIndex) { msgEl.innerHTML = 'Moved ' + describe(e.item); showInList(e.item); } } });
+}
+// Auto-scroll while dragging near the top or bottom edge. Sortable's own auto-scroll only re-reads the
+// pointer when it moves, so when you stop over your target the page keeps scrolling and the option lands
+// further on. This one reads the latest pointer position every frame and stops as soon as it leaves the
+// edge zone; Sortable re-checks what's under the (still) pointer every 50ms, so the drop spot follows.
+const edgeScroll = (() => {
+  let y = null, raf = 0;
+  const track = e => { const t = e.touches ? e.touches[0] : e; if (t) y = t.clientY; };
+  const evs = ['pointermove', 'touchmove', 'mousemove'];
+  function frame() {
+    if (y !== null) {
+      const ZONE = 70, MAX = 18;
+      const sb = $('sortBox'), bar = document.querySelector('.savebar');
+      // The edges are the window's, moved in past the sort card / save bar only while those are pinned there.
+      const sr = sb.getBoundingClientRect(), br = bar.getBoundingClientRect();
+      const top = document.body.classList.contains('sorting') && sr.top <= 1 ? Math.max(0, sr.bottom) : 0;
+      const bottom = bar.offsetParent && br.bottom >= innerHeight - 1 ? Math.min(innerHeight, br.top) : innerHeight;
+      let v = 0;
+      if (y > bottom - ZONE) v = Math.min(1, (y - (bottom - ZONE)) / ZONE);
+      else if (y < top + ZONE) v = -Math.min(1, (top + ZONE - y) / ZONE);
+      if (v) scrollBy(0, Math.sign(v) * Math.max(2, Math.round(v * v * MAX)));
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  return {
+    start(e) { y = null; evs.forEach(t => document.addEventListener(t, track, { capture: true, passive: true })); raf = requestAnimationFrame(frame); },
+    stop() { cancelAnimationFrame(raf); evs.forEach(t => document.removeEventListener(t, track, { capture: true })); y = null; },
+  };
+})();
+// A list taken out of the page must drop its Sortable: a live instance on a detached list can still be
+// picked as the drop target during an auto-scrolling drag, and the option vanishes with it.
+function disableSort(ol) { if (ol._sortable) { ol._sortable.destroy(); ol._sortable = null; edgeScroll.stop(); } }  // destroy() mid-drag skips onEnd
+function buildTiers() {
+  tiersEl.querySelectorAll('ol').forEach(disableSort);
+  tiersEl.innerHTML = TIERS.map((t, k) => groupHTML(t, k, k, false)).join('');
+  tierGroups = [...tiersEl.children];
+  leafLists().forEach(enableSort);
+}
+function splitGroup(g) {
+  // Turn a leaf into three sub-groups; its options start in Mid (the caller redistributes them).
+  const ol = g.lastElementChild, kids = document.createElement('div'), color = pathOfGroup(g)[0];
+  kids.className = 'kids';
+  kids.innerHTML = SUB.map((t, k) => groupHTML(t, k, color, true)).join('');
+  [...ol.children].forEach(li => kids.children[1].lastElementChild.appendChild(li));
+  disableSort(ol); g.replaceChild(kids, ol);
+  kids.querySelectorAll('ol').forEach(enableSort);
+  return kids;
+}
+function unsplitGroup(g) {
+  const ol = document.createElement('ol'); ol.className = 'items rank';
+  g.querySelectorAll('li').forEach(li => ol.appendChild(li));
+  g.querySelectorAll('ol').forEach(disableSort);
+  g.replaceChild(ol, g.lastElementChild);
+  enableSort(ol);
+}
+function groupAt(path, create) {
+  let g = tierGroups[path[0]];
+  for (const k of path.slice(1)) {
+    if (!g) return null;
+    if (isLeaf(g)) { if (!create) return null; splitGroup(g); }
+    g = g.lastElementChild.children[k];
+  }
+  return g || null;
+}
+const maxQuestions = n => { let q = 0; for (let k = 1; k < n; k++) q += Math.ceil(Math.log2(k + 1)); return q; };
+
+buildTiers();
+$('cardBtns').innerHTML = TIERS.map((t, k) =>
+  `<button type="button" data-card-tier="${k}" style="--tc:var(--t${k})">${esc(t)}<span class="c"></span></button>`).join('');
+const placed = [];  // undo stack of options placed from the card
+
+function stickyH() { return document.body.classList.contains('sorting') ? $('sortBox').offsetHeight : 0; }
+function showInList(li) {
+  // Scroll so the option sits in the middle of the space left below the pinned card, then flash it.
+  const r = li.getBoundingClientRect(), free = innerHeight - stickyH();
+  scrollTo({ top: scrollY + r.top - stickyH() - (free - r.height) / 2, behavior: 'smooth' });
+  document.querySelectorAll('li.flash').forEach(x => x.classList.remove('flash')); void li.offsetWidth; li.classList.add('flash');
+}
+function describe(li) {
+  const k = pathOf(li)[0], inTier = li.parentNode.children.length;
+  return `<b>${esc(poll.options[+li.dataset.i])}</b> → <b style="color:var(--t${k})">${esc(labelOf(li.closest('.group')))}</b>` +
+    ` (${inTier === 1 ? 'first there' : 'with ' + (inTier - 1) + ' other' + (inTier === 2 ? '' : 's')}), #${rankedItems().indexOf(li) + 1} overall`;
+}
+$('cardBtns').addEventListener('click', e => {
+  const b = e.target.closest('button'), li = unsortedEl.firstElementChild;
+  if (!b || !li) return;
+  leafFor(tierGroups[+b.dataset.cardTier]).appendChild(li);
+  placed.push(li);
+  refresh();
+  $('last').innerHTML = '✓ ' + describe(li);
+  showInList(li);
+});
+$('skip').addEventListener('click', () => {
+  const li = unsortedEl.firstElementChild;
+  if (li && unsortedEl.children.length > 1) { unsortedEl.appendChild(li); refresh(); $('last').textContent = 'Skipped; it will come back at the end.'; }
+});
+$('undo').addEventListener('click', () => {
+  const li = placed.pop(); if (!li) return;
+  unsortedEl.prepend(li); li.classList.remove('open');
+  refresh(); $('last').textContent = 'Undone.';
+});
+
+function itemHTML(i) {
+  return `<li data-i="${i}"><div class="main"><span class="pos"></span><span class="txt">${esc(poll.options[i])}</span><span class="handle" aria-label="Drag">⠿</span></div>
+    <div class="acts">${TIERS.map((t, k) => `<button type="button" class="tierbtn" data-tier="${k}" style="--tc:var(--t${k})">${esc(t)}</button>`).join('')}
+    <button type="button" class="splbtn" data-mark="0" aria-label="High">▲</button><button type="button" class="splbtn" data-mark="2" aria-label="Low">▼</button>
+    <span class="mvgrp"><button type="button" class="mv" data-mv="top" title="Top of its group">⤒</button><button type="button" class="mv" data-mv="-1" aria-label="Up">↑</button><button type="button" class="mv" data-mv="1" aria-label="Down">↓</button></span></div></li>`;
+}
+
+function refresh() {
+  rankedItems().forEach((li, k) => {
+    li.querySelector('.pos').textContent = (k + 1) + '.';
+    const t = pathOf(li)[0];
+    li.querySelectorAll('.tierbtn').forEach(b => b.classList.toggle('cur', +b.dataset.tier === t));
+  });
+  unsortedEl.querySelectorAll('.tierbtn').forEach(b => b.classList.remove('cur'));
+  document.querySelectorAll('li[data-mark]').forEach(li => { if (!splitting || !splitting.contains(li)) delete li.dataset.mark; });
+  tiersEl.querySelectorAll('.group').forEach(g => {
+    const n = g.querySelectorAll('li').length, leaf = isLeaf(g), head = g.firstElementChild;
+    head.querySelector('.cnt').textContent = n ? `(${n})` : '';
+    const me = g === splitting, busy = !!splitting;
+    head.querySelector('[data-act="split"]').hidden = busy || !(leaf && n >= 4 && pathOfGroup(g).length < MAX_DEPTH);
+    const c = head.querySelector('[data-act="cmp"]');
+    c.hidden = busy || !(leaf && n >= 2); c.textContent = `⇅ Compare (≤${maxQuestions(n)})`;
+    head.querySelector('[data-act="unsplit"]').hidden = busy || leaf;
+    head.querySelector('[data-act="spldone"]').hidden = head.querySelector('[data-act="splcancel"]').hidden = !me;
+    g.classList.toggle('splitting', me);
+    const hint = g.querySelector(':scope > .splhint'); hint.hidden = !me;
+    if (me) {
+      const lis = [...g.querySelectorAll('li')], cnt = k => lis.filter(li => (li.dataset.mark || '1') === String(k)).length;
+      lis.forEach(li => li.querySelectorAll('.splbtn').forEach(b => b.classList.toggle('cur', b.dataset.mark === li.dataset.mark)));
+      hint.textContent = `Compare within this group: tap ▲ for the ones that stand out as better, ▼ for worse (tap again to undo). The rest stay Mid. Now ▲${cnt(0)} · Mid ${cnt(1)} · ▼${cnt(2)}`;
+    }
+  });
+  const left = unsortedEl.children.length, total = poll.options.length;
+  const cur = unsortedEl.firstElementChild;
+  $('leftCount').textContent = left ? `${total - left + 1} of ${total}` : '';
+  $('current').innerHTML = cur ? esc(poll.options[+cur.dataset.i])
+    : '✓ All sorted. Big tier? “⊟ Split” it into High / Mid / Low. Small group? “⇅ Compare” orders it. Then save at the bottom.';
+  $('cardBtns').querySelectorAll('button').forEach((b, k) => b.querySelector('.c').textContent = tierGroups[k].querySelectorAll('li').length);
+  $('skip').hidden = left < 2;
+  $('undo').hidden = !placed.length || !!splitting;  // undoing a placement mid-split would hide Done/Cancel
+  $('sortBox').classList.toggle('done', left === 0);
+  document.body.classList.toggle('sorting', left > 0);
+  $('loadPrev').hidden = !(left > 0 && poll.ballots.length);  // the name box is hidden while sorting
+  $('save').disabled = left > 0 || !!splitting;
+  writeDraft();
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('button'); const li = e.target.closest('.items li');
+  if (!li) return;
+  if (!btn) {  // tap the option text: toggle its move buttons
+    if (e.target.closest('.txt') && li.parentNode !== unsortedEl && !li.closest('.splitting')) {
+      const wasOpen = li.classList.contains('open');
+      document.querySelectorAll('.items li.open').forEach(x => x.classList.remove('open'));
+      li.classList.toggle('open', !wasOpen);
+    }
+    return;
+  }
+  if (btn.classList.contains('splbtn')) {
+    if (li.dataset.mark === btn.dataset.mark) delete li.dataset.mark; else li.dataset.mark = btn.dataset.mark;
+  } else if (btn.dataset.tier !== undefined) {
+    const k = +btn.dataset.tier;
+    if (pathOf(li)[0] !== k) leafFor(tierGroups[k]).appendChild(li);  // new arrivals go to the bottom (of Mid, if split)
+  } else if (btn.dataset.mv === 'top') {
+    li.parentNode.prepend(li);
+  } else if (btn.dataset.mv) {
+    // Move one place in the flat list, crossing into the neighbouring group at its edges.
+    const ol = li.parentNode, leaves = leafLists(), L = leaves.indexOf(ol);
+    if (+btn.dataset.mv < 0) {
+      if (li.previousElementSibling) ol.insertBefore(li, li.previousElementSibling);
+      else if (L > 0) leaves[L - 1].appendChild(li);
+    } else {
+      if (li.nextElementSibling) ol.insertBefore(li.nextElementSibling, li);
+      else if (L < leaves.length - 1) leaves[L + 1].prepend(li);
+    }
+  }
+  refresh();
+});
+
+tiersEl.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const g = b.closest('.group');
+  if (b.dataset.act === 'split') splOpen(g);
+  else if (b.dataset.act === 'spldone') splFinish();
+  else if (b.dataset.act === 'splcancel') splClose('Split cancelled.');
+  else if (b.dataset.act === 'cmp') cmpOpen(g);
+  else if (b.dataset.act === 'unsplit') { unsplitGroup(g); refresh(); msgEl.textContent = `“${labelOf(g)}” is one group again.`; }
+});
+
+function openOverlay(el, g) {
+  el.querySelector('.cmpcard').style.setProperty('--tc', `var(--t${pathOfGroup(g)[0]})`);
+  el.hidden = false; document.body.classList.add('modal');
+}
+function closeOverlays() { $('cmp').hidden = true; document.body.classList.remove('modal'); cmp = null; }
+
+// ---- Split, in place: the group's rows stay where they are and each gets High / Mid / Low, so every
+// option is judged with the rest of the group in view. Unmarked rows are Mid. Done builds the sub-groups.
+function splOpen(g) {
+  document.querySelectorAll('.items li.open').forEach(x => x.classList.remove('open'));
+  splitting = g; refresh();
+  msgEl.textContent = `Splitting “${labelOf(g)}”: mark ▲ / ▼, then Done.`;
+  const head = g.firstElementChild, r = head.getBoundingClientRect();
+  if (r.top < 0 || r.top > innerHeight / 2) scrollTo({ top: scrollY + r.top - 8, behavior: 'smooth' });
+}
+function splClose(msg) {
+  const g = splitting; if (!g) return;
+  g.querySelectorAll('li').forEach(li => delete li.dataset.mark);
+  splitting = null; refresh(); msgEl.textContent = msg;
+}
+function splFinish() {
+  const g = splitting, ol = g.lastElementChild, lis = [...ol.children];
+  if (!lis.some(li => li.dataset.mark)) return splClose('Nothing marked High or Low, so it stays one group.');
+  const marks = lis.map(li => +(li.dataset.mark || 1));
+  const kids = splitGroup(g);
+  lis.forEach((li, j) => kids.children[marks[j]].lastElementChild.appendChild(li));  // keeps relative order
+  lis.forEach(li => delete li.dataset.mark);
+  splitting = null; refresh();
+  msgEl.textContent = `Split “${labelOf(g)}”. Remember to save.`;
+  const first = g.querySelector('li'); if (first) showInList(first);
+}
+
+// ---- "This or that?": binary insertion sort of one leaf group, driven by the user's answers.
+// The whole state is the list of answers so far; replaying them makes Undo trivial.
+let cmp = null;  // { g, items, answers, pair, flip }
+function simulate(items, answers) {
+  const sorted = [items[0]]; let q = 0;
+  for (let j = 1; j < items.length; j++) {
+    const x = items[j]; let lo = 0, hi = sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (q >= answers.length) {
+        let rem = Math.ceil(Math.log2(hi - lo + 1));
+        for (let k = j + 1; k < items.length; k++) rem += Math.ceil(Math.log2(k + 1));
+        return { need: [x, sorted[mid]], rem };
+      }
+      if (answers[q++]) hi = mid; else lo = mid + 1;  // true: x preferred over sorted[mid]
+    }
+    sorted.splice(lo, 0, x);
+  }
+  return { order: sorted };
+}
+function cmpStep() {
+  const r = simulate(cmp.items, cmp.answers);
+  if (r.order) return cmpFinish(r.order);
+  cmp.pair = r.need; cmp.flip = Math.random() < .5;  // random sides, so neither position is favoured
+  const [top, bottom] = cmp.flip ? [r.need[1], r.need[0]] : r.need;
+  $('cmpA').textContent = poll.options[top]; $('cmpB').textContent = poll.options[bottom];
+  $('cmpRem').textContent = `at most ${r.rem} more`;
+  $('cmpUndo').hidden = !cmp.answers.length;
+}
+function cmpAnswer(pickedTop) {
+  // Record whether the new option x (pair[0]) won; "Can't decide" (null) places it below.
+  cmp.answers.push(pickedTop === null ? false : pickedTop !== cmp.flip);
+  cmpStep();
+}
+function cmpOpen(g) {
+  cmp = { g, items: [...g.lastElementChild.children].map(li => +li.dataset.i), answers: [] };
+  $('cmpTitle').textContent = `Ordering “${labelOf(g)}” (${cmp.items.length})`;
+  openOverlay($('cmp'), g); cmpStep();
+}
+function cmpFinish(order) {
+  const g = cmp.g, ol = g.lastElementChild, byI = new Map([...ol.children].map(li => [+li.dataset.i, li]));
+  // Defensive: the overlay blocks edits mid-compare, but if the group changed anyway, reorder only
+  // what is still there and keep any newcomers after it.
+  const extras = [...byI.keys()].filter(i => !order.includes(i));
+  order.filter(i => byI.has(i)).concat(extras).forEach(i => ol.appendChild(byI.get(i)));
+  closeOverlays(); refresh();
+  msgEl.textContent = `“${labelOf(g)}” is now in the order you chose. Remember to save.`;
+  if (ol.firstElementChild) showInList(ol.firstElementChild);
+}
+$('cmpA').addEventListener('click', () => cmpAnswer(true));
+$('cmpB').addEventListener('click', () => cmpAnswer(false));
+$('cmpEither').addEventListener('click', () => cmpAnswer(null));
+$('cmpUndo').addEventListener('click', () => { cmp.answers.pop(); cmpStep(); });
+$('cmpCancel').addEventListener('click', closeOverlays);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && cmp) return closeOverlays();
+  if (e.key === 'Escape' && splitting) return splClose('Split cancelled.');
+  if (cmp) {
+    if (e.key === 'ArrowUp' || e.key === '1') cmpAnswer(true);
+    else if (e.key === 'ArrowDown' || e.key === '2') cmpAnswer(false);
+  }
+});
+
+function shuffled(n) {
+  const a = [...Array(n).keys()];
+  for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+function layout(ballot) {  // a saved ballot or a draft ({ranking, tiers, unsorted?}), or nothing for a fresh start
+  unsortedEl.innerHTML = ''; splitting = null; buildTiers(); placed.length = 0; $('last').textContent = '';
+  if (ballot) {
+    unsortedEl.innerHTML = (ballot.unsorted || []).map(itemHTML).join('');
+    const mid = Math.floor(TIERS.length / 2);  // ballots saved before tiers existed go in the middle tier
+    ballot.ranking.forEach((i, k) => {
+      const t = ballot.tiers ? ballot.tiers[k] : mid;
+      const g = groupAt(Array.isArray(t) ? t : [t], true) || tierGroups[mid];
+      leafFor(g).insertAdjacentHTML('beforeend', itemHTML(i));
+    });
+  } else {
+    // Random starting order so nobody's ranking inherits the poll's listing order.
+    unsortedEl.innerHTML = shuffled(poll.options.length).map(itemHTML).join('');
+  }
+  refresh();
+}
+
+function findMine() {
+  const nm = nameEl.value.trim().toLowerCase();
+  return nm && poll.ballots.find(b => b.name.toLowerCase() === nm);
+}
+
+function renderResults() {
+  $('mineBtns').hidden = !findMine();
+  const n = poll.ballots.length;
+  $('count').textContent = `(${n} ${n === 1 ? 'person' : 'people'})`;
+  const top = Math.max(1, poll.max_score);
+  $('results').innerHTML = poll.results.map((r, k) =>
+    `<tr><td class="n muted">${k + 1}.</td><td>${esc(r.option)}<div class="bar"><span style="width:${100 * r.score / top}%"></span></div></td><td class="n">${r.score}</td></tr>`).join('');
+  const tierOf = t => Array.isArray(t) ? t[0] : t;
+  $('ballots').innerHTML = poll.ballots.map(b => {
+    if (!b.tiers) return `<div class="ballot"><b>${esc(b.name)}</b>: ${b.ranking.map(i => esc(poll.options[i])).join(' › ')}</div>`;
+    const parts = TIERS.map((t, k) => {
+      const opts = b.ranking.filter((_, p) => tierOf(b.tiers[p]) === k);
+      return opts.length ? `<span class="tl" style="--tc:var(--t${k})">${esc(t)}:</span> ${opts.map(i => esc(poll.options[i])).join(' › ')}` : '';
+    }).filter(Boolean);
+    return `<div class="ballot"><b>${esc(b.name)}</b><br>${parts.join('<br>')}</div>`;
+  }).join('') || '<div class="muted">None yet.</div>';
+}
+
+async function load() {
+  const res = await fetch('/api/polls/' + pid);
+  if (!res.ok) { msgEl.textContent = 'Poll not found.'; return; }
+  poll = await res.json();
+  const draft = readDraft();
+  nameEl.value = draft ? draft.name : store.get('poll:name') || '';
+  const mine = findMine();
+  basis = mine ? mine.updated : null;
+  if (draft && (draft.basis === basis || !mine)) {
+    layout(draft);
+    const same = mine && !draft.unsorted.length && JSON.stringify([draft.ranking, draft.tiers]) === JSON.stringify([mine.ranking, mine.tiers]);
+    msgEl.textContent = same ? `Showing your saved ranking, ${mine.name}.`
+      : 'Picked up where you left off in this browser' + (mine ? ' (changes not saved yet).' : '.');
+  } else {
+    layout(mine || null);
+    if (mine) msgEl.textContent = draft ? `Showing your saved ranking, ${mine.name}: it was saved after this browser's unsaved changes.`
+      : `Showing your saved ranking, ${mine.name}.`;
+  }
+  ready = true; writeDraft();
+  renderResults();
+}
+
+nameEl.addEventListener('input', () => { const m = findMine(); basis = m ? m.updated : null; $('mineBtns').hidden = !m; writeDraft(); });
+// Loading a saved vote also adopts it for this browser, so a later save under another name offers to move it.
+function adopt(mine) {
+  basis = mine.updated; layout(mine); store.set(savedKey, mine.name); writeDraft();
+  msgEl.textContent = `Loaded your saved ranking, ${mine.name}. Change it and Save to update it.`;
+}
+function loadVote(mine) {  // put a saved vote on screen, asking first if that would throw away unsaved sorting
+  const items = rankedItems();
+  const same = !unsortedEl.children.length && JSON.stringify([items.map(li => +li.dataset.i), items.map(pathOf)]) === JSON.stringify([mine.ranking, mine.tiers]);
+  if (!same && items.length && !confirm(`Replace the ranking on screen with ${mine.name}'s saved vote?\n\nWhat's on screen now hasn't been saved and will be lost.`)) return;
+  nameEl.value = mine.name; store.set('poll:name', mine.name); $('mineBtns').hidden = false;
+  adopt(mine);
+}
+$('edit').addEventListener('click', () => { const mine = findMine(); if (mine) loadVote(mine); });
+$('loadBtn').addEventListener('click', () => {
+  const nm = (prompt('The name you voted under:', nameEl.value.trim() || store.get('poll:name') || '') || '').trim();
+  if (!nm) return;
+  const mine = poll.ballots.find(b => b.name.toLowerCase() === nm.toLowerCase());
+  if (!mine) { alert(`No vote saved as "${nm}" on this poll. Voters so far: ${poll.ballots.map(b => b.name).join(', ')}.`); return; }
+  loadVote(mine);
+});
+
+$('save').addEventListener('click', async () => {
+  const name = nameEl.value.trim();
+  if (!name) { msgEl.textContent = 'Please enter your name.'; nameEl.focus(); return; }
+  // Saving under a new name makes a second vote, not a renamed one. If this browser already saved one
+  // on this poll under another name, offer to move that vote instead (the server does it with the save).
+  const prev = store.get(savedKey), prevBallot = prev && poll.ballots.find(b => b.name.toLowerCase() === prev.toLowerCase());
+  const replaces = prevBallot && !findMine() && confirm(`You already voted as "${prevBallot.name}" in this browser.\n\n`
+      + `OK: change that vote's name to "${name}".\nCancel: keep "${prevBallot.name}" and add a separate vote for "${name}".`)
+    ? prevBallot.name : undefined;
+  const items = rankedItems();
+  const res = await fetch(`/api/polls/${pid}/vote`, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name, ranking: items.map(li => +li.dataset.i), tiers: items.map(pathOf), replaces }) });
+  const data = await res.json();
+  if (!res.ok) { msgEl.textContent = data.error; return; }
+  store.set('poll:name', name); store.set(savedKey, name);
+  poll = data; renderResults();
+  const saved = findMine(); basis = saved ? saved.updated : null; writeDraft();
+  msgEl.textContent = replaces ? `Saved, ${name}. The vote saved as ${replaces} is now yours under this name.`
+    : `Saved, ${name}. Saving again with the same name replaces it.`;
+});
+
+// Rename / delete act on the saved vote under the typed name.
+const savedKey = 'poll:saved:' + pid;  // the name this browser last saved under on this poll
+async function post(action, body) {
+  const res = await fetch(`/api/polls/${pid}/${action}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) {
+    msgEl.textContent = data.error;
+    const r = await fetch('/api/polls/' + pid); if (r.ok) { poll = await r.json(); renderResults(); }
+    return null;
+  }
+  poll = data; renderResults(); return data;
+}
+$('rename').addEventListener('click', async () => {
+  const mine = findMine(); if (!mine) return;
+  const to = (prompt(`Change the name on this vote from "${mine.name}" to:`, mine.name) || '').trim();
+  if (!to || to === mine.name) return;
+  if (!await post('rename', { name: mine.name, new_name: to })) return;
+  nameEl.value = to; store.set('poll:name', to); store.set(savedKey, to);
+  const m = findMine(); basis = m ? m.updated : null; writeDraft();
+  msgEl.textContent = `Renamed: your vote is now saved as ${to}.`;
+});
+$('del').addEventListener('click', async () => {
+  const mine = findMine(); if (!mine) return;
+  const when = new Date(mine.updated.replace(' ', 'T') + 'Z').toLocaleString([], { dateStyle:'medium', timeStyle:'short' });
+  const top = mine.ranking.slice(0, 3).map((i, k) => `  ${k + 1}. ${poll.options[i]}`).join('\n');
+  if (!confirm(`Delete ${mine.name}'s vote? This can't be undone.\n\nSaved ${when}. Top choices:\n${top}`
+      + (mine.ranking.length > 3 ? `\n  … and ${mine.ranking.length - 3} more` : '')
+      + `\n\nThe ranking on screen stays until you leave, so you can save it again.`)) return;
+  if (!await post('delete', { name: mine.name })) return;
+  basis = null; writeDraft();
+  msgEl.textContent = `Deleted the vote saved as ${mine.name}.`;
+});
+
+load();
+setInterval(async () => {
+  const res = await fetch('/api/polls/' + pid);
+  if (res.ok) { poll = await res.json(); renderResults(); }
+}, 15000);
+</script>
+</body>
+</html>

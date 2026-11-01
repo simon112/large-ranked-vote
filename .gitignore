@@ -1,0 +1,5 @@
+# Votes live in /var/lib/poll/polls.db; this copy is a stale pre-sandbox snapshot holding voter names.
+*.db
+*.db-journal
+*.db.bak*
+__pycache__/
