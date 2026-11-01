@@ -332,6 +332,7 @@ function itemHTML(i) {
     <span class="mvgrp"><button type="button" class="mv" data-mv="top" title="Top of its group">⤒</button><button type="button" class="mv" data-mv="-1" aria-label="Up">↑</button><button type="button" class="mv" data-mv="1" aria-label="Down">↓</button></span></div></li>`;
 }
 
+let leftBefore = 0;
 function refresh() {
   rankedItems().forEach((li, k) => {
     li.querySelector('.pos').textContent = (k + 1) + '.';
@@ -366,6 +367,10 @@ function refresh() {
   $('skip').hidden = left < 2;
   $('undo').hidden = !placed.length || !!splitting;  // undoing a placement mid-split would hide Done/Cancel
   $('sortBox').classList.toggle('done', left === 0);
+  // The message line lives in the save bar, hidden while sorting; when the bar appears, replace whatever
+  // was said meanwhile (e.g. about a Compare done mid-sort) with what matters now.
+  if (ready && leftBefore > 0 && left === 0) msgEl.textContent = 'All options placed. Save when ready.';
+  leftBefore = left;
   document.body.classList.toggle('sorting', left > 0);
   $('loadPrev').hidden = !(left > 0 && poll.ballots.length);  // the name box is hidden while sorting
   $('save').disabled = left > 0 || !!splitting;
