@@ -111,6 +111,10 @@
   summary { cursor:pointer; }
   .ballot { margin:10px 0; font-size:.92rem; }
   .ballot .tl { color:var(--tc); font-weight:600; }
+  .sys { border:1px solid var(--line); border-radius:8px; background:var(--card); padding:8px 10px; margin-top:8px; }
+  .sys summary b { color:var(--ink); }
+  .sys p { margin:6px 0; font-size:.9rem; }
+  .sys td.v { text-align:right; white-space:nowrap; font-size:.85rem; color:var(--muted); font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
@@ -152,9 +156,12 @@
     </div>
   </div>
 
-  <h2>Results <span class="muted" id="count"></span></h2>
+  <h2>Results (Borda count) <span class="muted" id="count"></span></h2>
   <table id="results"></table>
   <details><summary class="muted">Individual rankings</summary><div id="ballots"></div></details>
+  <h2>Other voting systems</h2>
+  <div class="muted">The same ballots counted other ways. Where they agree with the Borda result, the winner doesn’t hinge on how votes are counted.</div>
+  <div id="systems"></div>
   <p class="muted" style="margin-top:28px">Scored by Borda count on the whole list: with <i>n</i> options, your 1st gets <i>n</i>−1 points and your last gets 0. Tiers and splits just help you build the list. <a href="/">Make a new poll</a></p>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
@@ -545,6 +552,88 @@ function renderResults() {
     }).filter(Boolean);
     return `<div class="ballot"><b>${esc(b.name)}</b><br>${parts.join('<br>')}</div>`;
   }).join('') || '<div class="muted">None yet.</div>';
+  renderSystems();
+}
+
+// ---- Other voting systems, computed here from the same ballots (each is a full ranking of every option).
+// Each returns rows {i, key, v, f}: higher key ranks higher, equal keys tie; v is the value shown, f fills the bar.
+function pairwise(n, ballots) {  // d[a][b] = number of voters who rank a above b
+  const d = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (const b of ballots) {
+    const pos = new Array(n); b.ranking.forEach((i, k) => pos[i] = k);
+    for (let a = 0; a < n; a++) for (let c = 0; c < n; c++) if (pos[a] < pos[c]) d[a][c]++;
+  }
+  return d;
+}
+const SYSTEMS = [
+  { name: 'First choices (plurality)',
+    about: 'Only each voter’s #1 counts; the option ranked first by the most people wins.',
+    run(n, B) {
+      const c = new Array(n).fill(0); B.forEach(b => c[b.ranking[0]]++);
+      return c.map((x, i) => ({ i, key: x, v: `${x} first`, f: x / B.length }));
+    } },
+  { name: 'Instant runoff',
+    about: 'Each ballot counts for its highest option still in the race. The option with the fewest such votes is knocked out (ties go to the lower Borda score) and its votes pass on, round by round. Listed in reverse order of elimination; the number is its votes in the round it went out (or won).',
+    run(n, B, borda) {
+      const alive = new Set(poll.options.map((_, i) => i)), out = [];
+      while (alive.size) {
+        const c = new Map([...alive].map(i => [i, 0]));
+        B.forEach(b => { const top = b.ranking.find(i => alive.has(i)); c.set(top, c.get(top) + 1); });
+        const lo = [...alive].sort((x, y) => c.get(x) - c.get(y) || borda[x] - borda[y] || y - x)[0];
+        out.push({ i: lo, votes: c.get(lo), round: n - alive.size + 1 }); alive.delete(lo);
+      }
+      const ru = out[n - 2];  // the runner-up, out in the last two-way round; the winner had every other vote
+      return out.map((o, k) => o.round === n ? { i: o.i, key: k, v: `won ${B.length - ru.votes}–${ru.votes}` + (2 * ru.votes === B.length ? ' (tie, Borda)' : ''), f: 1 - ru.votes / B.length }
+        : { i: o.i, key: k, v: `${o.votes} in round ${o.round}`, f: o.votes / B.length });
+    } },
+  { name: 'Head-to-head (Copeland)',
+    about: 'Every pair of options is a contest: whichever more voters rank higher wins it. Ranked by contests won (a tie counts half); shown as won–lost, then tied if any. An option that wins all of them is the Condorcet winner.',
+    run(n, B, borda, d) {
+      return poll.options.map((_, a) => {
+        let w = 0, l = 0, t = 0;
+        for (let c = 0; c < n; c++) if (c !== a) { if (d[a][c] > d[c][a]) w++; else if (d[a][c] < d[c][a]) l++; else t++; }
+        return { i: a, key: w + t / 2, v: `${w}–${l}` + (t ? `–${t}` : '') + (w === n - 1 ? ' Condorcet' : ''), f: (w + t / 2) / (n - 1) };
+      });
+    } },
+  { name: 'Schulze',
+    about: 'Also head-to-head, but a defeat can be outweighed by a stronger chain of wins (A beats B beats C can overrule C beating A). Score is how many options each one beats this way. Picks the Condorcet winner whenever there is one.',
+    run(n, B, borda, d) {
+      const p = d.map((r, a) => r.map((x, c) => x > d[c][a] ? x : 0));
+      for (let k = 0; k < n; k++) for (let a = 0; a < n; a++) if (a !== k && p[a][k]) for (let c = 0; c < n; c++)
+        if (c !== a && c !== k) { const m = Math.min(p[a][k], p[k][c]); if (m > p[a][c]) p[a][c] = m; }
+      return poll.options.map((_, a) => {
+        let w = 0; for (let c = 0; c < n; c++) if (c !== a && p[a][c] > p[c][a]) w++;
+        return { i: a, key: w, v: `beats ${w}`, f: w / (n - 1) };
+      });
+    } },
+  { name: `Approval (${TIERS[0]} or ${TIERS[1]})`,
+    about: `Counts how many voters put each option in their “${TIERS[0]}” or “${TIERS[1]}” tier; order within tiers doesn’t matter.`,
+    run(n, B) {
+      const T = B.filter(b => b.tiers), c = new Array(n).fill(0);
+      T.forEach(b => b.ranking.forEach((i, k) => { if ((Array.isArray(b.tiers[k]) ? b.tiers[k][0] : b.tiers[k]) <= 1) c[i]++; }));
+      return c.map((x, i) => ({ i, key: x, v: `${x} of ${T.length}`, f: T.length ? x / T.length : 0 }));
+    } },
+];
+let systemsFor = null;  // the ballots the tables were last built from: skip the (cubic) recount when nothing changed
+function renderSystems() {
+  const B = poll.ballots, n = poll.options.length, sig = JSON.stringify(B.map(b => [b.ranking, b.tiers]));
+  if (sig === systemsFor) return;
+  systemsFor = sig;
+  if (!B.length) { $('systems').innerHTML = '<div class="muted" style="margin-top:8px">No votes yet.</div>'; return; }
+  const open = new Set([...$('systems').querySelectorAll('details[open]')].map(x => x.dataset.k));
+  const borda = new Array(n).fill(0); poll.results.forEach(r => borda[r.index] = r.score);
+  const d = pairwise(n, B);
+  $('systems').innerHTML = SYSTEMS.map((s, k) => {
+    const rows = s.run(n, B, borda, d).sort((x, y) => y.key - x.key || borda[y.i] - borda[x.i] || x.i - y.i);
+    let rank = 0;
+    const trs = rows.map((r, j) => {
+      if (!j || r.key !== rows[j - 1].key) rank = j + 1;
+      return `<tr><td class="n muted">${rank}.</td><td>${esc(poll.options[r.i])}<div class="bar"><span style="width:${100 * r.f}%"></span></div></td><td class="v">${r.v}</td></tr>`;
+    }).join('');
+    const top = rows.filter(r => r.key === rows[0].key).map(r => esc(poll.options[r.i]));
+    const win = top.length === 1 ? top[0] : top.length <= 3 ? 'tie: ' + top.join(', ') : `${top.length}-way tie`;
+    return `<details class="sys" data-k="${k}"${open.has(String(k)) ? ' open' : ''}><summary><b>${esc(s.name)}</b> <span class="muted">· ${win}</span></summary><p class="muted">${s.about}</p><table>${trs}</table></details>`;
+  }).join('');
 }
 
 async function load() {
