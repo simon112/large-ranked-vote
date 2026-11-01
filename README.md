@@ -50,12 +50,13 @@ Polls are created at `/` and live at `/p/<id>`. The API is listed at the top of 
 
 ## Deploying as a sandboxed service
 
-`poll.service` is a systemd unit that runs the server as an unprivileged `poll` user under a tight sandbox:
+`poll.service` is a systemd unit that runs the server as an unprivileged `poll` user under a tight sandbox. Its filesystem is an allowlist: the service's root is an empty directory, and only what the server was traced opening is mounted into it:
 
-- the filesystem is read-only, with `/home` hidden;
-- the network is limited to localhost;
-- system calls are filtered;
-- memory, task and CPU use are capped.
+- the Python binary, its standard library and the system's shared libraries;
+- the app in `/opt/poll`, read-only;
+- its database directory, `/var/lib/poll`.
+
+There is no `/etc`, `/home`, `/proc`, `/sys`, other binaries, or anything else on the host. The network is limited to localhost, there are no capabilities, system calls are filtered, and memory, task and CPU use are capped. The unit pins `/usr/bin/python3.12` (Ubuntu 24.04); adjust the paths for another Python.
 
 Put a reverse proxy or tunnel in front of it to make it public. `deploy.sh` copies the code to `/opt/poll`, installs the unit and restarts the service.
 

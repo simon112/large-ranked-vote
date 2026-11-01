@@ -7,40 +7,52 @@ After=network.target
 [Service]
 User=poll
 Group=poll
-ExecStart=/usr/bin/python3 -I /opt/poll/server.py
+# -I: ignore PYTHON* env and user site; -S: no site.py, so no dist-packages or distro hooks.
+ExecStart=/usr/bin/python3.12 -I -S /opt/poll/server.py
 Environment=POLL_PORT=8787 POLL_HOST=127.0.0.1 POLL_DB=/var/lib/poll/polls.db
 StateDirectory=poll
 StateDirectoryMode=0700
 UMask=0077
 Restart=on-failure
 
-# Filesystem: whole OS read-only, /home /root /run/user invisible, private /tmp and /dev.
+# Filesystem: an allowlist. The service's root is an empty, root-owned directory; only what
+# the server actually opens (traced with strace) is mounted into it. No /etc, /home, /srv,
+# other /opt, other /var/lib, /usr/share, /proc, /sys, or any binary but python. Shared
+# libraries are the one coarse grant: the whole multiarch dir, so library upgrades don't break
+# the service. /lib and /lib64 are symlinks into /usr on the host, so the libraries are mounted
+# at both paths. python3.12 is Ubuntu 24.04's; a distro Python upgrade means updating the paths.
+RootDirectory=/opt/poll-root
+BindReadOnlyPaths=/usr/bin/python3.12 /usr/lib/python3.12 /usr/lib/locale/C.utf8
+BindReadOnlyPaths=/usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu /usr/lib64:/lib64
+BindReadOnlyPaths=/opt/poll
+BindPaths=/var/lib/poll
+# No /proc or /sys at all (ProtectProc=/ProcSubset= would mount both back in); /dev is the
+# minimal private one from PrivateDevices.
+MountAPIVFS=no
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
-ProtectProc=invisible
-ProcSubset=pid
 
 # Network: may only listen/talk on localhost (Tailscale Funnel connects to 127.0.0.1:8787).
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictAddressFamilies=AF_INET AF_INET6
 IPAddressDeny=any
 IPAddressAllow=localhost
 
-# Privileges and kernel surface.
+# Privileges and kernel surface. Not set, on purpose: ProtectKernelTunables, ProtectControlGroups
+# and ProtectHostname work by binding the host's /proc and /sys read-only, which would put them
+# back into the empty root; with no capabilities the service can't change any of those anyway.
 NoNewPrivileges=yes
+MemoryDenyWriteExecute=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=yes
 LockPersonality=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes
-ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
-ProtectControlGroups=yes
 ProtectClock=yes
-ProtectHostname=yes
 RemoveIPC=yes
 PrivateIPC=yes
 SystemCallArchitectures=native
