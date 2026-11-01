@@ -1,6 +1,6 @@
 # large-ranked-vote
 
-A small self-hosted poll for ranking **lots** of options: dozens of candidate names, not a handful. People sort the options into tiers, refine the tiers, and the results are scored by Borda count.
+A small self-hosted poll for ranking **lots** of options: dozens of candidate names, not a handful. People sort the options into tiers, refine the tiers, and the results are scored by Borda count, with other voting systems shown alongside for comparison.
 
 There are no accounts. You make a poll, share the link, and each person votes under their name. The whole thing is one Python file using only the standard library, with SQLite for storage, plus two HTML pages.
 
@@ -17,6 +17,16 @@ Your ballot is the whole list read top to bottom. Tiers and splits only help you
 ## Scoring
 
 Borda count: with *n* options, your 1st choice gets *n*−1 points and your last gets 0. Results and everyone's individual rankings are shown on the poll page and refresh every 15 seconds.
+
+Below the Borda results, collapsed panels count the same ballots by other methods, each showing its winner in the panel header:
+
+- **First choices (plurality)**: only each voter's #1 counts.
+- **Instant runoff**: the option with the fewest votes is knocked out round by round. Ties go against the lower Borda score.
+- **Head-to-head (Copeland)**: options ranked by pairwise contests won, marking a Condorcet winner if there is one.
+- **Schulze**: head-to-head, but a stronger chain of wins can outweigh a single defeat.
+- **Approval**: how many voters put each option in *Love it* or *Like it*.
+
+These are computed in the page from the ballots the API returns. Where they agree with Borda, the winner doesn't hinge on the counting method.
 
 The starting order of the cards is shuffled per voter, so nobody's ranking inherits the order the options were entered in. For the same reason, link previews don't list option names.
 
