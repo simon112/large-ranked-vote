@@ -457,26 +457,57 @@ function splFinish() {
 // down the group as it stands: the top is the sorted part, each next option is inserted into it.
 // The whole state is the list of answers so far; replaying them makes Undo trivial. The group is
 // reordered after every answer, so stopping early keeps everything answered so far.
-let cmp = null;  // { g, items, answers, pair, flip }
-function simulate(items, answers) {
-  const sorted = [items[0]]; let q = 0;
+// Answers are remembered (in this browser) as [preferred, other] pairs, so a later Compare of the same
+// options skips what it already knows. A pair the tier's order now contradicts (you dragged since) is
+// forgotten: the newer choice wins. "Can't decide" is not remembered. They belong with the unsaved
+// draft: putting a saved ballot or a fresh start on screen forgets them (see layout).
+let cmp = null;  // { g, items, answers, base, reach, pair, flip }
+const prefsKey = 'poll:prefs:' + pid;
+function readPrefs() {
+  try {
+    const a = JSON.parse(store.get(prefsKey)), n = poll.options.length, ok = i => Number.isInteger(i) && i >= 0 && i < n;
+    return Array.isArray(a) ? a.filter(p => Array.isArray(p) && p.length === 2 && ok(p[0]) && ok(p[1]) && p[0] !== p[1]) : [];
+  } catch { return []; }
+}
+// reach[a][b]: items[a] is known to beat items[b], directly or through a chain. Each answer is added as
+// the replay goes, so it chains with remembered answers and earlier answers in this Compare.
+function closure(n, edges) {
+  const reach = Array.from({ length: n }, () => Array(n).fill(false));
+  for (const [a, b] of edges) addEdge(reach, a, b);
+  return reach;
+}
+function addEdge(reach, u, v) {  // u beats v: so does everything that beats u, over v and all v beats
+  const n = reach.length, up = [u], down = [v];
+  for (let a = 0; a < n; a++) { if (reach[a][u]) up.push(a); if (reach[v][a]) down.push(a); }
+  for (const a of up) for (const b of down) reach[a][b] = true;
+}
+function simulate(items, answers, reach0) {
+  const at = new Map(items.map((i, k) => [i, k])), reach = reach0.map(r => [...r]);
+  const better = (x, y) => reach[at.get(x)][at.get(y)] ? true : reach[at.get(y)][at.get(x)] ? false : undefined;
+  const sorted = [items[0]], pairs = []; let q = 0;
   for (let j = 1; j < items.length; j++) {
     const x = items[j]; let lo = 0, hi = sorted.length;
     while (lo < hi) {
-      const mid = (lo + hi) >> 1;
+      const mid = (lo + hi) >> 1, known = better(x, sorted[mid]);
+      if (known !== undefined) { if (known) hi = mid; else lo = mid + 1; continue; }
       if (q >= answers.length) {
         let rem = Math.ceil(Math.log2(hi - lo + 1));
         for (let k = j + 1; k < items.length; k++) rem += Math.ceil(Math.log2(k + 1));
         // Meanwhile x sits at the lowest place its answers allow (where it already is, before any);
         // the options not reached yet keep their order below.
         const order = [...sorted.slice(0, hi), x, ...sorted.slice(hi), ...items.slice(j + 1)];
-        return { need: [x, sorted[mid]], rem, order };
+        return { need: [x, sorted[mid]], rem, order, pairs };
       }
-      if (answers[q++]) hi = mid; else lo = mid + 1;  // true: x preferred over sorted[mid]
+      const a = answers[q++];  // true: x preferred over sorted[mid]; null: can't decide, x goes below
+      if (a !== null) {
+        const [w, l] = a ? [x, sorted[mid]] : [sorted[mid], x];
+        pairs.push([w, l]); addEdge(reach, at.get(w), at.get(l));
+      }
+      if (a) hi = mid; else lo = mid + 1;
     }
     sorted.splice(lo, 0, x);
   }
-  return { order: sorted, done: true };
+  return { order: sorted, done: true, pairs };
 }
 function cmpApply(order) {
   const ol = cmp.g.lastElementChild, byI = new Map([...ol.children].map(li => [+li.dataset.i, li]));
@@ -487,9 +518,11 @@ function cmpApply(order) {
   refresh();
 }
 function cmpStep() {
-  const r = simulate(cmp.items, cmp.answers);
+  const r = simulate(cmp.items, cmp.answers, cmp.reach);
+  store.set(prefsKey, JSON.stringify([...cmp.base, ...r.pairs]));
   cmpApply(r.order);
-  if (r.done) return cmpClose(`“${labelOf(cmp.g)}” is now in the order you chose. Remember to save.`);
+  if (r.done) return cmpClose(cmp.answers.length ? `“${labelOf(cmp.g)}” is now in the order you chose. Remember to save.`
+    : `“${labelOf(cmp.g)}” is already in the order of your earlier answers.`);
   cmp.pair = r.need; cmp.flip = Math.random() < .5;  // random sides, so neither position is favoured
   const [top, bottom] = cmp.flip ? [r.need[1], r.need[0]] : r.need;
   $('cmpA').textContent = poll.options[top]; $('cmpB').textContent = poll.options[bottom];
@@ -498,11 +531,17 @@ function cmpStep() {
 }
 function cmpAnswer(pickedTop) {
   // Record whether the new option x (pair[0]) won; "Can't decide" (null) places it below.
-  cmp.answers.push(pickedTop === null ? false : pickedTop !== cmp.flip);
+  cmp.answers.push(pickedTop === null ? null : pickedTop !== cmp.flip);
   cmpStep();
 }
 function cmpOpen(g) {
-  cmp = { g, items: [...g.lastElementChild.children].map(li => +li.dataset.i), answers: [] };
+  const items = [...g.lastElementChild.children].map(li => +li.dataset.i), n = items.length;
+  const at = new Map(items.map((i, k) => [i, k]));
+  // Keep remembered pairs the current order agrees with (and all pairs about other options); forget the rest.
+  const base = readPrefs().filter(([w, l]) => !(at.has(w) && at.has(l) && at.get(w) > at.get(l)));
+  // Every kept edge points down the current order, so what they imply can't contradict it either.
+  const reach = closure(n, base.filter(([w, l]) => at.has(w) && at.has(l)).map(([w, l]) => [at.get(w), at.get(l)]));
+  cmp = { g, items, answers: [], base, reach };
   $('cmpTitle').textContent = `Ordering “${labelOf(g)}” (${cmp.items.length})`;
   openOverlay($('cmp'), g); cmpStep();
 }
@@ -535,7 +574,8 @@ function shuffled(n) {
   return a;
 }
 
-function layout(ballot) {  // a saved ballot or a draft ({ranking, tiers, unsorted?}), or nothing for a fresh start
+function layout(ballot, isDraft) {  // a saved ballot or a draft ({ranking, tiers, unsorted?}), or nothing for a fresh start
+  if (!isDraft) store.set(prefsKey, '[]');  // remembered Compare answers go with the draft they were made in
   unsortedEl.innerHTML = ''; splitting = null; buildTiers(); placed.length = 0; $('last').textContent = '';
   if (ballot) {
     unsortedEl.innerHTML = (ballot.unsorted || []).map(itemHTML).join('');
@@ -666,7 +706,7 @@ async function load() {
   const mine = findMine();
   basis = mine ? mine.updated : null;
   if (draft && (draft.basis === basis || !mine)) {
-    layout(draft);
+    layout(draft, true);
     const same = mine && !draft.unsorted.length && JSON.stringify([draft.ranking, draft.tiers]) === JSON.stringify([mine.ranking, mine.tiers]);
     msgEl.textContent = same ? `Showing your saved ranking, ${mine.name}.`
       : 'Picked up where you left off in this browser' + (mine ? ' (changes not saved yet).' : '.');
