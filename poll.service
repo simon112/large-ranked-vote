@@ -2,14 +2,15 @@
 # Installed to /etc/systemd/system/poll.service by deploy.sh.
 [Unit]
 Description=Ranked poll server (Borda), sandboxed
-After=network.target
+Requires=poll.socket
+After=poll.socket
 
 [Service]
 User=poll
 Group=poll
 # -I: ignore PYTHON* env and user site; -S: no site.py, so no dist-packages or distro hooks.
 ExecStart=/usr/bin/python3.12 -I -S /opt/poll/server.py
-Environment=POLL_PORT=8787 POLL_HOST=127.0.0.1 POLL_DB=/var/lib/poll/polls.db
+Environment=POLL_DB=/var/lib/poll/polls.db
 StateDirectory=poll
 StateDirectoryMode=0700
 UMask=0077
@@ -17,27 +18,35 @@ Restart=on-failure
 
 # Filesystem: an allowlist. The service's root is an empty, root-owned directory; only what
 # the server actually opens (traced with strace) is mounted into it. No /etc, /home, /srv,
-# other /opt, other /var/lib, /usr/share, /proc, /sys, or any binary but python. Shared
-# libraries are the one coarse grant: the whole multiarch dir, so library upgrades don't break
-# the service. /lib and /lib64 are symlinks into /usr on the host, so the libraries are mounted
-# at both paths. python3.12 is Ubuntu 24.04's; a distro Python upgrade means updating the paths.
+# other /opt, other /var/lib, /usr/share, or any binary but python. Shared libraries are the
+# one coarse grant: the whole multiarch dir, so library upgrades don't break the service.
+# /lib and /lib64 are symlinks into /usr on the host, so the libraries are mounted at both
+# paths. python3.12 is Ubuntu 24.04's; a distro Python upgrade means updating the paths.
+# StateDirectory= mounts /var/lib/poll in by itself.
 RootDirectory=/opt/poll-root
 BindReadOnlyPaths=/usr/bin/python3.12 /usr/lib/python3.12 /usr/lib/locale/C.utf8
 BindReadOnlyPaths=/usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu /usr/lib64:/lib64
 BindReadOnlyPaths=/opt/poll
-BindPaths=/var/lib/poll
-# No /proc or /sys at all (ProtectProc=/ProcSubset= would mount both back in); /dev is the
-# minimal private one from PrivateDevices.
+# No procfs or sysfs: /proc and /sys are only empty stub directories (ProtectProc=, ProcSubset=,
+# ProtectKernelTunables= and ProtectControlGroups= would each mount the real ones back in).
 MountAPIVFS=no
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+# PrivateDevices gives a minimal /dev, but bind-mounts the host's /dev/shm, /dev/pts and
+# /dev/hugepages into it; the server uses none of them, so cover them with empty read-only tmpfs.
 PrivateDevices=yes
+TemporaryFileSystem=/dev/shm:ro /dev/pts:ro /dev/hugepages:ro
 
-# Network: may only listen/talk on localhost (Tailscale Funnel connects to 127.0.0.1:8787).
-RestrictAddressFamilies=AF_INET AF_INET6
+# Network: no sockets of its own. The listening socket comes from poll.socket (which holds the
+# localhost-only address filter). RestrictAddressFamilies=none makes socket(2) fail for every
+# family; per systemd.exec(5) this is reliable on x86-64 when combined with
+# SystemCallArchitectures=native (set below), and only socketpair(2), which makes a connected
+# AF_UNIX pair and reaches nothing, is exempt. PrivateNetwork= is left off on purpose: it
+# mounts a fresh sysfs into the root (namespace.c, MOUNT_PRIVATE_SYSFS), and with no way to
+# create a socket it would add little.
+RestrictAddressFamilies=none
 IPAddressDeny=any
-IPAddressAllow=localhost
 
 # Privileges and kernel surface. Not set, on purpose: ProtectKernelTunables, ProtectControlGroups
 # and ProtectHostname work by binding the host's /proc and /sys read-only, which would put them

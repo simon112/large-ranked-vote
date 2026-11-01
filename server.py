@@ -14,6 +14,8 @@ import html
 import json
 import os
 import secrets
+import socket
+import socketserver
 import sqlite3
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -249,7 +251,25 @@ class Handler(BaseHTTPRequestHandler):
         self.send(404, {"error": "not found"})
 
 
+class InheritedSocketServer(ThreadingHTTPServer):
+    """Serve on an already-listening socket. Skips TCPServer.__init__, which would create (and,
+    under RestrictAddressFamilies=none, fail to create) a socket of its own."""
+    def __init__(self, sock, handler):
+        socketserver.BaseServer.__init__(self, sock.getsockname(), handler)
+        self.socket = sock
+        self.server_name, self.server_port = self.server_address[:2]
+
+
+def make_server():
+    """Use the listening socket systemd passes in (socket activation, see poll.socket) if there is
+    one, so the service itself can run with no network access; otherwise bind HOST:PORT."""
+    if os.environ.get("LISTEN_PID") == str(os.getpid()) and os.environ.get("LISTEN_FDS") == "1":
+        sock = socket.socket(fileno=3)  # SD_LISTEN_FDS_START
+        return InheritedSocketServer(sock, Handler), f"systemd socket {sock.getsockname()}"
+    return ThreadingHTTPServer((HOST, PORT), Handler), f"http://{HOST}:{PORT}"
+
 if __name__ == "__main__":
     init_db()
-    print(f"poll server on http://{HOST}:{PORT}", flush=True)
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    server, where = make_server()
+    print(f"poll server on {where}", flush=True)
+    server.serve_forever()

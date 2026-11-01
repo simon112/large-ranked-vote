@@ -56,14 +56,15 @@ Polls are created at `/` and live at `/p/<id>`. The API is listed at the top of 
 - the app in `/opt/poll`, read-only;
 - its database directory, `/var/lib/poll`.
 
-There is no `/etc`, `/home`, `/proc`, `/sys`, other binaries, or anything else on the host. The network is limited to localhost, there are no capabilities, system calls are filtered, and memory, task and CPU use are capped. The unit pins `/usr/bin/python3.12` (Ubuntu 24.04); adjust the paths for another Python.
+There is no `/etc`, `/home`, other binaries, or anything else on the host; `/proc`, `/sys` and the shared parts of `/dev` are empty.
 
-Put a reverse proxy or tunnel in front of it to make it public. `deploy.sh` copies the code to `/opt/poll`, installs the unit and restarts the service.
+The service has no network access of its own. `poll.socket` listens on `127.0.0.1:8787` and accepts only localhost peers, then passes the listening socket to the server (socket activation). The server can't create any socket, so it can't reach other services on the machine, even ones on localhost. It also has no capabilities, its system calls are filtered, and its memory, task and CPU use are capped. The unit pins `/usr/bin/python3.12` (Ubuntu 24.04); adjust the paths for another Python.
+
+Put a reverse proxy or tunnel in front of it to make it public. `deploy.sh` copies the code to `/opt/poll`, installs both units and restarts the service. Run directly (`python3 server.py`), the server binds `POLL_HOST:POLL_PORT` itself.
 
 ```sh
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin poll   # once
 ./deploy.sh
-sudo systemctl enable poll                                              # once
 ```
 
 The database lives at `/var/lib/poll/polls.db`.

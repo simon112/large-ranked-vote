@@ -1,0 +1,15 @@
+# Socket activation: systemd listens on the host's loopback and hands the listening socket to
+# poll.service, which itself runs with no network of its own (PrivateNetwork=yes) and can't
+# create sockets (RestrictAddressFamilies=none). Installed to /etc/systemd/system by deploy.sh.
+[Unit]
+Description=Ranked poll server socket
+
+[Socket]
+ListenStream=127.0.0.1:8787
+# Tailscale Funnel connects from localhost. Filters on the socket unit cover the connections
+# accepted on it; the service's own filters don't (systemd.resource-control(5)).
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=sockets.target
