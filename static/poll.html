@@ -146,7 +146,7 @@
 
   <div class="overlay" id="cmp" hidden>
     <div class="cmpcard" role="dialog" aria-modal="true" aria-labelledby="cmpTitle">
-      <div class="sorthead"><b id="cmpTitle"></b><span class="grow"></span><button type="button" class="linkbtn" id="cmpCancel">Cancel</button></div>
+      <div class="sorthead"><b id="cmpTitle"></b><span class="grow"></span><button type="button" class="linkbtn" id="cmpCancel">Stop here</button></div>
       <div class="q">Which do you prefer?</div>
       <button type="button" class="choice" id="cmpA"></button>
       <div class="or">or</div>
@@ -446,8 +446,10 @@ function splFinish() {
   const first = g.querySelector('li'); if (first) showInList(first);
 }
 
-// ---- "This or that?": binary insertion sort of one leaf group, driven by the user's answers.
-// The whole state is the list of answers so far; replaying them makes Undo trivial.
+// ---- "This or that?": binary insertion sort of one leaf group, driven by the user's answers. It works
+// down the group as it stands: the top is the sorted part, each next option is inserted into it.
+// The whole state is the list of answers so far; replaying them makes Undo trivial. The group is
+// reordered after every answer, so stopping early keeps everything answered so far.
 let cmp = null;  // { g, items, answers, pair, flip }
 function simulate(items, answers) {
   const sorted = [items[0]]; let q = 0;
@@ -458,17 +460,29 @@ function simulate(items, answers) {
       if (q >= answers.length) {
         let rem = Math.ceil(Math.log2(hi - lo + 1));
         for (let k = j + 1; k < items.length; k++) rem += Math.ceil(Math.log2(k + 1));
-        return { need: [x, sorted[mid]], rem };
+        // Meanwhile x sits at the lowest place its answers allow (where it already is, before any);
+        // the options not reached yet keep their order below.
+        const order = [...sorted.slice(0, hi), x, ...sorted.slice(hi), ...items.slice(j + 1)];
+        return { need: [x, sorted[mid]], rem, order };
       }
       if (answers[q++]) hi = mid; else lo = mid + 1;  // true: x preferred over sorted[mid]
     }
     sorted.splice(lo, 0, x);
   }
-  return { order: sorted };
+  return { order: sorted, done: true };
+}
+function cmpApply(order) {
+  const ol = cmp.g.lastElementChild, byI = new Map([...ol.children].map(li => [+li.dataset.i, li]));
+  // Defensive: the overlay blocks edits mid-compare, but if the group changed anyway, reorder only
+  // what is still there and keep any newcomers after it.
+  const extras = [...byI.keys()].filter(i => !order.includes(i));
+  order.filter(i => byI.has(i)).concat(extras).forEach(i => ol.appendChild(byI.get(i)));
+  refresh();
 }
 function cmpStep() {
   const r = simulate(cmp.items, cmp.answers);
-  if (r.order) return cmpFinish(r.order);
+  cmpApply(r.order);
+  if (r.done) return cmpClose(`“${labelOf(cmp.g)}” is now in the order you chose. Remember to save.`);
   cmp.pair = r.need; cmp.flip = Math.random() < .5;  // random sides, so neither position is favoured
   const [top, bottom] = cmp.flip ? [r.need[1], r.need[0]] : r.need;
   $('cmpA').textContent = poll.options[top]; $('cmpB').textContent = poll.options[bottom];
@@ -485,23 +499,22 @@ function cmpOpen(g) {
   $('cmpTitle').textContent = `Ordering “${labelOf(g)}” (${cmp.items.length})`;
   openOverlay($('cmp'), g); cmpStep();
 }
-function cmpFinish(order) {
-  const g = cmp.g, ol = g.lastElementChild, byI = new Map([...ol.children].map(li => [+li.dataset.i, li]));
-  // Defensive: the overlay blocks edits mid-compare, but if the group changed anyway, reorder only
-  // what is still there and keep any newcomers after it.
-  const extras = [...byI.keys()].filter(i => !order.includes(i));
-  order.filter(i => byI.has(i)).concat(extras).forEach(i => ol.appendChild(byI.get(i)));
-  closeOverlays(); refresh();
-  msgEl.textContent = `“${labelOf(g)}” is now in the order you chose. Remember to save.`;
+function cmpClose(msg) {
+  const ol = cmp.g.lastElementChild;
+  closeOverlays(); msgEl.textContent = msg;
   if (ol.firstElementChild) showInList(ol.firstElementChild);
+}
+function cmpStop() {
+  cmpClose(cmp.answers.length ? `Stopped: “${labelOf(cmp.g)}” keeps the order from your answers so far. Remember to save.`
+    : 'Compare closed; nothing changed.');
 }
 $('cmpA').addEventListener('click', () => cmpAnswer(true));
 $('cmpB').addEventListener('click', () => cmpAnswer(false));
 $('cmpEither').addEventListener('click', () => cmpAnswer(null));
 $('cmpUndo').addEventListener('click', () => { cmp.answers.pop(); cmpStep(); });
-$('cmpCancel').addEventListener('click', closeOverlays);
+$('cmpCancel').addEventListener('click', cmpStop);
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && cmp) return closeOverlays();
+  if (e.key === 'Escape' && cmp) return cmpStop();
   if (e.key === 'Escape' && splitting) return splClose('Split cancelled.');
   if (cmp) {
     if (e.key === 'ArrowUp' || e.key === '1') cmpAnswer(true);
