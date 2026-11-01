@@ -422,8 +422,10 @@ tiersEl.addEventListener('click', e => {
 function openOverlay(el, g) {
   el.querySelector('.cmpcard').style.setProperty('--tc', `var(--t${pathOfGroup(g)[0]})`);
   el.hidden = false; document.body.classList.add('modal');
+  setBehind(el, true);  // the backdrop stops the pointer; inert also stops Tab and screen readers reaching the page
 }
-function closeOverlays() { $('cmp').hidden = true; document.body.classList.remove('modal'); cmp = null; }
+function setBehind(el, on) { for (const x of el.parentElement.children) if (x !== el) x.inert = on; }
+function closeOverlays() { $('cmp').hidden = true; setBehind($('cmp'), false); document.body.classList.remove('modal'); cmp = null; }
 
 // ---- Split, in place: the group's rows stay where they are and each gets High / Mid / Low, so every
 // option is judged with the rest of the group in view. Unmarked rows are Mid. Done builds the sub-groups.
