@@ -1,3 +1,5 @@
+(something made in a relatively short time via claude code. If it has value, largely in (a) noticing the problem and coming up with some initial solutions and (b) some initial debugging of the most obvious surface-level problems. Code has not undergone manual review or any deep AI review)
+
 # large-ranked-vote
 
 A small self-hosted poll for ranking **lots** of options: dozens of candidate names, not a handful. People sort the options into tiers, refine the tiers, and the results are scored by Borda count, with other voting systems shown alongside for comparison.
