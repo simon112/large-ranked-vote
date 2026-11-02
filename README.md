@@ -87,4 +87,4 @@ The database lives at `/var/lib/poll/polls.db`.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Public domain, with no warranty and no liability ([the Unlicense](https://unlicense.org/)). See [LICENSE](LICENSE).
